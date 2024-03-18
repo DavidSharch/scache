@@ -21,6 +21,7 @@ func NewBTree() *BTree {
 	}
 }
 
+// Put 记录下key对应数据在哪个文件中的哪个位置
 func (bt *BTree) Put(key []byte, pos *data.LogRecordPos) bool {
 	if key == nil || len(key) == 0 {
 		return false

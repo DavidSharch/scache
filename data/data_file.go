@@ -16,6 +16,11 @@ func (f *LogDataFile) Write(value []byte) error {
 	return nil
 }
 
+// ReadData 读取出指定offset的数据
+func (f *LogDataFile) ReadData(offset int64) (*LogRecord, error) {
+	return nil, nil
+}
+
 // OpenLogDataFile 打开数据文件
 func OpenLogDataFile(dirPath string, fileId uint32) (*LogDataFile, error) {
 	return nil, nil

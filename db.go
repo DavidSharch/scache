@@ -198,7 +198,7 @@ func (d *DB) Put(key []byte, value []byte) (bool, error) {
 	}
 	// 更新内存索引
 	if ok := d.index.Put(key, pos); ok {
-		return false, ErrUpdateIndex
+		return false, ErrUpdateIndexFailed
 	}
 	return true, nil
 }
@@ -251,4 +251,32 @@ func (d *DB) Get(key []byte) ([]byte, error) {
 		return nil, ErrDataDeleted
 	}
 	return logRecord.Value, nil
+}
+
+// ------------------------------
+// -----------删除流程------------
+// ------------------------------
+
+func (d *DB) Delete(key []byte) error {
+	if len(key) == 0 {
+		return ErrKeyNotValid
+	}
+	exists := d.index.Get(key)
+	if exists == nil {
+		return ErrKeyNotExists
+	}
+	record := &data.LogRecord{
+		Key:   key,
+		Value: []byte{},
+		Type:  data.LogRecordDeleted,
+	}
+	_, err := d.appendLogRecord(record)
+	if err != nil {
+		return err
+	}
+	// 删除索引值
+	if ok := d.index.Delete(key); !ok {
+		return ErrUpdateIndexFailed
+	}
+	return nil
 }

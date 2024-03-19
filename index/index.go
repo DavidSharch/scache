@@ -2,7 +2,7 @@ package index
 
 import (
 	"bytes"
-	"github.com/google/btree"
+	gbtree "github.com/google/btree"
 	"github.com/sharch/scache/data"
 )
 
@@ -21,6 +21,26 @@ type Item struct {
 	pos *data.LogRecordPos
 }
 
-func (i Item) Less(bi btree.Item) bool {
+func (i Item) Less(bi gbtree.Item) bool {
 	return bytes.Compare(i.key, bi.(*Item).key) == -1
+}
+
+type MemoryIndexType byte
+
+const (
+	Btree    MemoryIndexType = iota
+	SkipList MemoryIndexType = iota
+	ART      MemoryIndexType = iota // ART自适应基数树
+)
+
+func NewIndexer(typ MemoryIndexType) Indexer {
+	switch typ {
+	case Btree:
+		return NewBTree()
+	case SkipList:
+		return nil
+	case ART:
+		return nil
+	}
+	panic("index type not supported")
 }

@@ -18,6 +18,7 @@ type LogRecord struct {
 	Key   []byte
 	Value []byte
 	Type  LogRecordType
+	Size  int64 // LogRecord 所占byte长度
 }
 
 func EncodeLogRecord(record *LogRecord) (value []byte, valueSize int64) {

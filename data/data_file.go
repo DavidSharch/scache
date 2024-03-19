@@ -18,7 +18,10 @@ func (f *LogDataFile) Write(value []byte) error {
 
 // ReadData 读取出指定offset的数据
 func (f *LogDataFile) ReadData(offset int64) (*LogRecord, error) {
-	return nil, nil
+	res := &LogRecord{
+		Size: 0,
+	}
+	return res, nil
 }
 
 // OpenLogDataFile 打开数据文件

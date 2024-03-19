@@ -3,15 +3,126 @@ package scache
 import (
 	"github.com/sharch/scache/data"
 	"github.com/sharch/scache/index"
+	"io"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
 type DB struct {
 	mu         *sync.RWMutex
 	activeFile *data.LogDataFile            // activeFile 只有一个活跃文件
-	oldFiles   map[uint32]*data.LogDataFile // oldFiles旧文件，文件编号->文件
+	oldFiles   map[uint32]*data.LogDataFile // oldFiles 旧文件，文件编号->文件
 	index      index.Indexer                // index 内存索引
+	fileIds    []int                        // fileIds 排序后的文件id，最大的id是活跃文件
 	Options
+}
+
+// ------------------------------
+// -----------DB相关-------------
+// ------------------------------
+
+func OpenDB(opts Options) (*DB, error) {
+	if err := CheckOptions(opts); err != nil {
+		return nil, err
+	}
+	db := &DB{
+		mu:       new(sync.RWMutex),
+		Options:  opts,
+		oldFiles: make(map[uint32]*data.LogDataFile),
+		index:    index.NewIndexer(opts.MemoryIndexType),
+	}
+	// 加载数据文件
+	if err := db.loadDataFile(); err != nil {
+		return nil, err
+	}
+	// 加载索引
+	if err := db.loadIndexDataFromFile(); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// loadDataFile 加载目录下的全部数据文件
+func (d *DB) loadDataFile() error {
+	dirEntries, err := os.ReadDir(d.DirPath)
+	if err != nil {
+		return err
+	}
+	var fileIds []int
+	for _, entry := range dirEntries {
+		if strings.HasSuffix(entry.Name(), "scl") {
+			temp := strings.Split(entry.Name(), ".")[0]
+			id, err := strconv.Atoi(temp)
+			if err != nil {
+				panic("data file name error,filename should be like 0001.scl")
+			}
+			fileIds = append(fileIds, int(id))
+		}
+	}
+	// 按照fileId顺序，从小到达依次加载文件
+	sort.Ints(fileIds)
+	d.fileIds = fileIds
+	for i := 0; i < len(fileIds); i++ {
+		fid := uint32(fileIds[i])
+		file, err := data.OpenLogDataFile(d.Options.DirPath, fid)
+		if err != nil {
+			return err
+		}
+		if i == len(fileIds)-1 {
+			// 最后一个文件是活跃文件
+			d.activeFile = file
+		} else {
+			d.oldFiles[fid] = file
+		}
+	}
+	return nil
+}
+
+// loadIndexDataFromFile 加载索引数据
+func (d *DB) loadIndexDataFromFile() error {
+	if len(d.fileIds) == 0 {
+		// 最开始，可能还没有写入任何数据
+		return nil
+	}
+	// 取出全部文件内容，构建内存索引
+	for i, fileId := range d.fileIds {
+		var dataFile *data.LogDataFile
+		if uint32(fileId) == d.activeFile.FileId {
+			// 活跃文件
+			dataFile = d.activeFile
+		} else {
+			dataFile = d.oldFiles[uint32(fileId)]
+		}
+		var offset int64 = 0
+		// 开始读取文件中的每一行
+		for {
+			// 拿到一条log数据
+			log, err := dataFile.ReadData(offset)
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+			// 构建内存索引数据
+			key := log.Key
+			logPos := &data.LogRecordPos{Fid: uint32(fileId), Offset: offset}
+			if log.Type == data.LogRecordDeleted {
+				d.index.Delete(key)
+			} else {
+				d.index.Put(key, logPos)
+			}
+			offset += log.Size
+		}
+		// 更新活跃文件的最新offset
+		if i == len(d.fileIds)-1 {
+			d.activeFile.Pos = offset
+		}
+	}
+	return nil
 }
 
 // ------------------------------
@@ -24,7 +135,7 @@ func (d *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error)
 	defer d.mu.Unlock()
 	// active file是否存在
 	if d.activeFile == nil {
-		if err := d.newActiveFile(); nil != nil {
+		if err := d.newActiveFile(); err != nil {
 			return nil, err
 		}
 	}

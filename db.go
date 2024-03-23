@@ -100,7 +100,7 @@ func (d *DB) loadIndexDataFromFile() error {
 		// 开始读取文件中的每一行
 		for {
 			// 拿到一条log数据
-			log, err := dataFile.ReadData(offset)
+			log, err := dataFile.ReadLogRecord(offset)
 			if err != nil {
 				if err == io.EOF {
 					break
@@ -243,7 +243,7 @@ func (d *DB) Get(key []byte) ([]byte, error) {
 	if dataFile == nil {
 		return nil, ErrDataFileNotFound
 	}
-	logRecord, err := dataFile.ReadData(pos.Offset)
+	logRecord, err := dataFile.ReadLogRecord(pos.Offset)
 	if err != nil {
 		return nil, err
 	}

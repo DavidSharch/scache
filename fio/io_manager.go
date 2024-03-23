@@ -11,4 +11,9 @@ type IOManager interface {
 	// Sync 刷盘
 	Sync() error
 	Close() error
+	Size() (int64, error)
+}
+
+func NewIOManager(fileName string) (IOManager, error) {
+	return NewFileIO(fileName)
 }

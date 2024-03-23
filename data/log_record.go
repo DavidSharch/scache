@@ -13,6 +13,8 @@ const (
 	LogRecordDeleted LogRecordType = iota
 )
 
+const MaxHeaderSize = 15
+
 // LogRecord 保存数据
 type LogRecord struct {
 	Key   []byte
@@ -21,6 +23,17 @@ type LogRecord struct {
 	Size  int64 // LogRecord 所占byte长度
 }
 
+type LogRecordHeader struct {
+	Crc       uint32        // Crc 校验
+	Type      LogRecordType // Type 类型
+	KeySize   uint32        // KeySize key长度，可变
+	ValueSize uint32        // ValueSize key长度，可变
+}
+
 func EncodeLogRecord(record *LogRecord) (value []byte, valueSize int64) {
+	return nil, 0
+}
+
+func parseHeader(b []byte) (*LogRecordHeader, int64) {
 	return nil, 0
 }

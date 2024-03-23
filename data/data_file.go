@@ -1,9 +1,10 @@
 package data
 
 import (
+	"errors"
 	"fmt"
-	"github.com/sharch/scache"
 	"github.com/sharch/scache/fio"
+	"hash/crc32"
 	"io"
 	"path/filepath"
 )
@@ -68,9 +69,10 @@ func (f *LogDataFile) ReadLogRecord(offset int64) (*LogRecord, error) {
 	res.Key = readBytes[:keySize]
 	res.Value = readBytes[keySize:]
 	// CRC校验
-	crc := getLogRecordCrc(res, header)
+	crc := getLogRecordCrc(res, bytes[crc32.Size:headerSize])
 	if crc != header.Crc {
-		return nil, scache.ErrCrcError
+		// TODO 解决依赖问题
+		return nil, errors.New("crc error,data is broken")
 	}
 	return res, nil
 }
@@ -82,11 +84,6 @@ func (f *LogDataFile) readBytes(len int64, offset int64) ([]byte, error) {
 		return nil, err
 	}
 	return b, nil
-}
-
-// getLogRecordCrc 计算CRC
-func getLogRecordCrc(l *LogRecord, header *LogRecordHeader) uint32 {
-	return 0
 }
 
 // OpenLogDataFile 打开数据文件

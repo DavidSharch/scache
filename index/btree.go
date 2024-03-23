@@ -29,8 +29,8 @@ func (bt *BTree) Put(key []byte, pos *data.LogRecordPos) bool {
 	bt.lock.Lock()
 	defer bt.lock.Unlock()
 	item := &Item{key: key, pos: pos}
-	res := bt.engine.ReplaceOrInsert(item)
-	return res != nil
+	bt.engine.ReplaceOrInsert(item)
+	return true
 }
 
 // Get b-tree读取时不需要加锁

@@ -88,6 +88,7 @@ func (d *DB) loadIndexDataFromFile() error {
 		return nil
 	}
 	// 取出全部文件内容，构建内存索引
+	// FIXME 从文件中构建索引有Bug，只能读取出一条数据
 	for i, fileId := range d.fileIds {
 		var dataFile *data.LogDataFile
 		if uint32(fileId) == d.activeFile.FileId {
@@ -197,7 +198,8 @@ func (d *DB) Put(key []byte, value []byte) (bool, error) {
 		return false, nil
 	}
 	// 更新内存索引
-	if ok := d.index.Put(key, pos); ok {
+	if ok := d.index.Put(key, pos); !ok {
+		// 这里不可能更新/写入失败
 		return false, ErrUpdateIndexFailed
 	}
 	return true, nil

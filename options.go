@@ -28,3 +28,12 @@ func CheckOptions(opt Options) error {
 	}
 	return nil
 }
+
+// DefaultOption 默认实现
+var DefaultOption = Options{
+	DirPath:         os.TempDir(),
+	Port:            6076,
+	MaxSize:         256 * 1024 * 1024,
+	SafeWrite:       false,
+	MemoryIndexType: index.Btree,
+}

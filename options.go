@@ -13,6 +13,12 @@ type Options struct {
 	MemoryIndexType index.MemoryIndexType // MemoryIndexType内存索引类型
 }
 
+type IterOption struct {
+	KeyPattern func(key []byte) bool // KeyPattern 遍历哪些key
+	Reverse    bool
+	Prefix     []byte
+}
+
 func CheckOptions(opt Options) error {
 	if len(opt.DirPath) == 0 {
 		return ErrDirNotExisted
@@ -36,4 +42,9 @@ var DefaultOption = Options{
 	MaxSize:         256 * 1024 * 1024,
 	SafeWrite:       false,
 	MemoryIndexType: index.Btree,
+}
+
+var DefaultIterOption = IterOption{
+	KeyPattern: nil,
+	Reverse:    false,
 }

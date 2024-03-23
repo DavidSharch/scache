@@ -13,6 +13,8 @@ type Indexer interface {
 	// Get 拿到key对于数据保存的位置
 	Get(key []byte) *data.LogRecordPos
 	Delete(key []byte) bool
+	Iterator(reverse bool) Iterator
+	Size() int
 }
 
 // Item kv对应的结构

@@ -282,3 +282,82 @@ func (d *DB) Delete(key []byte) error {
 	}
 	return nil
 }
+
+func (db *DB) Close() error {
+	if db.activeFile == nil {
+		return nil
+	}
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	if err := db.activeFile.Close(); err != nil {
+		return err
+	}
+	for _, file := range db.oldFiles {
+		err := file.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *DB) Sync() error {
+	if db.activeFile == nil {
+		return nil
+	}
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	if err := db.activeFile.Sync(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *DB) getValueByPosition(pos *data.LogRecordPos) ([]byte, error) {
+	// 数据在活跃文件中
+	var dataFile *data.LogDataFile
+	if d.activeFile.FileId == pos.Fid {
+		dataFile = d.activeFile
+	} else {
+		dataFile = d.oldFiles[pos.Fid]
+
+	}
+	if dataFile == nil {
+		return nil, ErrDataFileNotFound
+	}
+	logRecord, err := dataFile.ReadLogRecord(pos.Offset)
+	if err != nil {
+		return nil, err
+	}
+	if logRecord.Type == data.LogRecordDeleted {
+		return nil, ErrDataDeleted
+	}
+	return logRecord.Value, nil
+}
+
+// ListKeys 拿到数据库中的全部key
+func (db *DB) ListKeys() [][]byte {
+	iter := db.index.Iterator(false)
+	keys := make([][]byte, db.index.Size())
+	idx := 0
+	for iter.Rewind(); iter.Valid(); iter.Next() {
+		keys[idx] = iter.Key()
+	}
+	return keys
+}
+
+func (db *DB) ForEach(fn func(key []byte, value []byte) bool) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	iter := db.index.Iterator(false)
+	for iter.Rewind(); iter.Valid(); iter.Next() {
+		v, err := db.getValueByPosition(iter.Value())
+		if err != nil {
+			return err
+		}
+		if !fn(iter.Key(), v) {
+			break
+		}
+	}
+	return nil
+}

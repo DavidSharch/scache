@@ -19,6 +19,11 @@ type IterOption struct {
 	Prefix     []byte
 }
 
+type WriteBatchOption struct {
+	MaxWriteNum uint // MaxWriteNum 批次最大写入数据
+	SafeWrite   bool // SafeWrite 提交事务时持久化
+}
+
 func CheckOptions(opt Options) error {
 	if len(opt.DirPath) == 0 {
 		return ErrDirNotExisted

@@ -17,6 +17,7 @@ type DB struct {
 	oldFiles   map[uint32]*data.LogDataFile // oldFiles 旧文件，文件编号->文件
 	index      index.Indexer                // index 内存索引
 	fileIds    []int                        // fileIds 排序后的文件id，最大的id是活跃文件
+	seqNum     uint64                       // seqNum 事务序列号
 	Options
 }
 
@@ -87,6 +88,16 @@ func (d *DB) loadIndexDataFromFile() error {
 		// 最开始，可能还没有写入任何数据
 		return nil
 	}
+	updateIndexFn := func(log *data.LogRecord, logPos *data.LogRecordPos) {
+		key := log.Key
+		if log.Type == data.LogRecordDeleted {
+			d.index.Delete(key)
+		} else {
+			d.index.Put(key, logPos)
+		}
+	}
+	txnRecords := make(map[uint64][]*data.TxnRecord)
+	curSeqNum := NonTxnSeq
 	// 取出全部文件内容，构建内存索引
 	// FIXME 从文件中构建索引有Bug，只能读取出一条数据
 	for i, fileId := range d.fileIds {
@@ -111,10 +122,27 @@ func (d *DB) loadIndexDataFromFile() error {
 			// 构建内存索引数据
 			key := log.Key
 			logPos := &data.LogRecordPos{Fid: uint32(fileId), Offset: offset}
-			if log.Type == data.LogRecordDeleted {
-				d.index.Delete(key)
+			// 解析事务id
+			realKey, seq := parseSeqNum(key)
+			// 非事务
+			if seq == NonTxnSeq {
+				updateIndexFn(log, logPos)
 			} else {
-				d.index.Put(key, logPos)
+				if log.Type == data.LogRecordTxnFin {
+					for _, txnRecord := range txnRecords[seq] {
+						updateIndexFn(txnRecord.Record, txnRecord.Pos)
+					}
+					delete(txnRecords, seq)
+				} else {
+					log.Key = realKey
+					txnRecords[seq] = append(txnRecords[seq], &data.TxnRecord{
+						Record: log,
+						Pos:    logPos,
+					})
+				}
+			}
+			if seq > curSeqNum {
+				curSeqNum = seq
 			}
 			offset += log.Size
 		}
@@ -123,6 +151,7 @@ func (d *DB) loadIndexDataFromFile() error {
 			d.activeFile.Pos = offset
 		}
 	}
+	d.seqNum = curSeqNum
 	return nil
 }
 
@@ -134,6 +163,10 @@ func (d *DB) loadIndexDataFromFile() error {
 func (d *DB) appendLogRecord(record *data.LogRecord) (*data.LogRecordPos, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.appendLogRecordWithoutLock(record)
+}
+
+func (d *DB) appendLogRecordWithoutLock(record *data.LogRecord) (*data.LogRecordPos, error) {
 	// active file是否存在
 	if d.activeFile == nil {
 		if err := d.newActiveFile(); err != nil {
@@ -189,7 +222,7 @@ func (d *DB) Put(key []byte, value []byte) (bool, error) {
 	}
 
 	dataLog := &data.LogRecord{
-		Key:   key,
+		Key:   joinKeyWithSeq(NonTxnSeq, key),
 		Value: value,
 		Type:  data.LogRecordNormal,
 	}
@@ -268,7 +301,7 @@ func (d *DB) Delete(key []byte) error {
 		return ErrKeyNotExists
 	}
 	record := &data.LogRecord{
-		Key:   key,
+		Key:   joinKeyWithSeq(NonTxnSeq, key),
 		Value: []byte{},
 		Type:  data.LogRecordDeleted,
 	}

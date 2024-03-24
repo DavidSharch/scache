@@ -16,6 +16,7 @@ type LogRecordType = byte
 const (
 	LogRecordNormal  LogRecordType = iota
 	LogRecordDeleted LogRecordType = iota
+	LogRecordTxnFin  LogRecordType = iota
 )
 
 const MaxHeaderSize = 15
@@ -33,6 +34,11 @@ type LogRecordHeader struct {
 	Type      LogRecordType // Type 类型
 	KeySize   uint32        // KeySize key长度，可变
 	ValueSize uint32        // ValueSize key长度，可变
+}
+
+type TxnRecord struct {
+	Record *LogRecord
+	Pos    *LogRecordPos
 }
 
 // EncodeLogRecord 将kv编码

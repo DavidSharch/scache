@@ -12,5 +12,6 @@ var (
 	ErrDirNotExisted = errors.New("db dir path not exists")
 	ErrFileTooSmall  = errors.New("db file size <= 0")
 
-	ErrCrcError = errors.New("crc error,data is broken")
+	ErrCrcError       = errors.New("crc error,data is broken")
+	ErrMaxPendingData = errors.New("too many un-committed data,you need to do commit")
 )

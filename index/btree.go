@@ -2,7 +2,7 @@ package index
 
 import (
 	"bytes"
-	gbtree "github.com/google/btree"
+	"github.com/google/btree"
 	"github.com/sharch/scache/data"
 	"sort"
 	"sync"
@@ -10,60 +10,64 @@ import (
 
 // BTree 基于B+树实现的存储引擎。这里pos没有意义，将item作为整体，交给b树维护
 type BTree struct {
-	// tree 需要使用读写锁
-	engine *gbtree.BTree
-	lock   *sync.RWMutex
+	tree *btree.BTree
+	lock *sync.RWMutex
 }
 
+// NewBTree 新建 BTree 索引结构
 func NewBTree() *BTree {
-	// degree 叶子节点数量
 	return &BTree{
-		engine: gbtree.New(32),
-		lock:   new(sync.RWMutex),
+		tree: btree.New(32),
+		lock: new(sync.RWMutex),
 	}
 }
 
-// Put 记录下key对应数据在哪个文件中的哪个位置
-func (bt *BTree) Put(key []byte, pos *data.LogRecordPos) bool {
-	if key == nil || len(key) == 0 {
-		return false
-	}
+func (bt *BTree) Put(key []byte, pos *data.LogRecordPos) *data.LogRecordPos {
+	it := &Item{key: key, pos: pos}
 	bt.lock.Lock()
-	defer bt.lock.Unlock()
-	item := &Item{key: key, pos: pos}
-	bt.engine.ReplaceOrInsert(item)
-	return true
+	oldItem := bt.tree.ReplaceOrInsert(it)
+	bt.lock.Unlock()
+	if oldItem == nil {
+		return nil
+	}
+	return oldItem.(*Item).pos
 }
 
-// Get b-tree读取时不需要加锁
 func (bt *BTree) Get(key []byte) *data.LogRecordPos {
-	if key == nil || len(key) == 0 {
+	it := &Item{key: key}
+	btreeItem := bt.tree.Get(it)
+	if btreeItem == nil {
 		return nil
 	}
-	item := &Item{key: key}
-	res := bt.engine.Get(item)
-	if res == nil {
-		return nil
-	}
-	return res.(*Item).pos
+	return btreeItem.(*Item).pos
 }
 
-func (bt *BTree) Delete(key []byte) bool {
-	if key == nil || len(key) == 0 {
-		return false
-	}
-	item := &Item{key: key}
+func (bt *BTree) Delete(key []byte) (*data.LogRecordPos, bool) {
+	it := &Item{key: key}
 	bt.lock.Lock()
-	defer bt.lock.Unlock()
-	return bt.engine.Delete(item) != nil
-}
-
-func (bt *BTree) Iterator(reverse bool) Iterator {
-	return newBtreeIterator(bt.engine, reverse)
+	oldItem := bt.tree.Delete(it)
+	bt.lock.Unlock()
+	if oldItem == nil {
+		return nil, false
+	}
+	return oldItem.(*Item).pos, true
 }
 
 func (bt *BTree) Size() int {
-	return bt.engine.Len()
+	return bt.tree.Len()
+}
+
+func (bt *BTree) Iterator(reverse bool) Iterator {
+	if bt.tree == nil {
+		return nil
+	}
+	bt.lock.RLock()
+	defer bt.lock.RUnlock()
+	return newBtreeIterator(bt.tree, reverse)
+}
+
+func (bt *BTree) Close() error {
+	return nil
 }
 
 // -------------------
@@ -86,10 +90,10 @@ type bTreeIterator struct {
 	values  []*Item // values 遍历结果
 }
 
-func newBtreeIterator(tree *gbtree.BTree, reverse bool) *bTreeIterator {
+func newBtreeIterator(tree *btree.BTree, reverse bool) *bTreeIterator {
 	idx := 0
 	values := make([]*Item, tree.Len())
-	saveValueFn := func(item gbtree.Item) bool {
+	saveValueFn := func(item btree.Item) bool {
 		values[idx] = item.(*Item)
 		idx++
 		return true

@@ -34,7 +34,7 @@ func OpenDB(opts Options) (*DB, error) {
 		mu:       new(sync.RWMutex),
 		Options:  opts,
 		oldFiles: make(map[uint32]*data.LogDataFile),
-		index:    index.NewIndexer(opts.MemoryIndexType),
+		index:    index.NewIndexer(opts.MemoryIndexType, opts.DirPath, opts.SafeWrite),
 	}
 	// 加载 merge 数据目录
 	if err := db.loadMergedFiles(); err != nil {
@@ -236,7 +236,7 @@ func (d *DB) Put(key []byte, value []byte) (bool, error) {
 		return false, nil
 	}
 	// 更新内存索引
-	if ok := d.index.Put(key, pos); !ok {
+	if ok := d.index.Put(key, pos); ok != nil {
 		// 这里不可能更新/写入失败
 		return false, ErrUpdateIndexFailed
 	}
@@ -315,7 +315,7 @@ func (d *DB) Delete(key []byte) error {
 		return err
 	}
 	// 删除索引值
-	if ok := d.index.Delete(key); !ok {
+	if _, ok := d.index.Delete(key); !ok {
 		return ErrUpdateIndexFailed
 	}
 	return nil

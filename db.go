@@ -18,6 +18,7 @@ type DB struct {
 	index      index.Indexer                // index 内存索引
 	fileIds    []int                        // fileIds 排序后的文件id，最大的id是活跃文件
 	seqNum     uint64                       // seqNum 事务序列号
+	isMerging  bool                         // isMerging 是否正在merge
 	Options
 }
 
@@ -34,6 +35,10 @@ func OpenDB(opts Options) (*DB, error) {
 		Options:  opts,
 		oldFiles: make(map[uint32]*data.LogDataFile),
 		index:    index.NewIndexer(opts.MemoryIndexType),
+	}
+	// 加载 merge 数据目录
+	if err := db.loadMergedFiles(); err != nil {
+		return nil, err
 	}
 	// 加载数据文件
 	if err := db.loadDataFile(); err != nil {

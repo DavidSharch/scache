@@ -104,3 +104,29 @@ func getLogRecordCrc(l *LogRecord, header []byte) uint32 {
 	crc = crc32.Update(crc, crc32.IEEETable, l.Value)
 	return crc
 }
+
+// ParseLogRecordKey 解析 LogRecord 的 key，获取实际的 key 和事务序列号
+func ParseLogRecordKey(key []byte) ([]byte, uint64) {
+	seqNo, n := binary.Uvarint(key)
+	realKey := key[n:]
+	return realKey, seqNo
+}
+
+func EncodeLogRecordPos(r *LogRecordPos) []byte {
+	buf := make([]byte, binary.MaxVarintLen32+binary.MaxVarintLen64)
+	index := 0
+	index += binary.PutUvarint(buf[index:], uint64(r.Fid))
+	index += binary.PutUvarint(buf[index:], uint64(r.Offset))
+	return buf[:index]
+}
+
+func DecodeLogRecordPos(buf []byte) *LogRecordPos {
+	index := 0
+	fid, i := binary.Uvarint(buf[index:])
+	index += i
+	offset, _ := binary.Uvarint(buf[index:])
+	return &LogRecordPos{
+		Fid:    uint32(fid),
+		Offset: int64(offset),
+	}
+}

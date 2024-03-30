@@ -10,6 +10,7 @@ import (
 )
 
 const DataFileNameSuffix = ".scl"
+const FileLockedName = "scl_file_lock"
 
 type LogDataFile struct {
 	FileId    uint32
@@ -100,4 +101,23 @@ func OpenLogDataFile(dirPath string, fileId uint32) (*LogDataFile, error) {
 		Pos:       0,
 		IOManager: manager,
 	}, nil
+}
+
+// OpenMergeFinishedFile 打开标识 merge 完成的文件
+func OpenMergeFinishedFile(dirPath string) (*LogDataFile, error) {
+	fileName := filepath.Join(dirPath, MERGE_DONE_MARK_FILE_NAME)
+	// 初始化IOManager
+	manager, err := fio.NewIOManager(fileName)
+	if err != nil {
+		return nil, err
+	}
+	return &LogDataFile{
+		FileId:    0,
+		Pos:       0,
+		IOManager: manager,
+	}, nil
+}
+
+func GetDataFileName(dirPath string, fileId uint32) string {
+	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
 }

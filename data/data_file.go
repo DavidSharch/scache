@@ -9,95 +9,158 @@ import (
 	"path/filepath"
 )
 
-const DataFileNameSuffix = ".scl"
+var (
+	ErrInvalidCRC = errors.New("invalid crc value, log record maybe corrupted")
+)
 
-type LogDataFile struct {
-	FileId    uint32
-	Pos       int64 // 当前文件写入offset
-	IOManager fio.IOManager
+const (
+	DataFileNameSuffix    = ".data"
+	HintFileName          = "hint-index"
+	MergeFinishedFileName = "merge-finished"
+	SeqNoFileName         = "seq-no"
+)
+
+// DataFile 数据文件
+type DataFile struct {
+	FileId    uint32        // 文件id
+	WriteOff  int64         // 文件写到了哪个位置
+	IoManager fio.IOManager // io 读写管理
 }
 
-func (f *LogDataFile) Close() error {
-	return f.IOManager.Close()
+// OpenDataFile 打开新的数据文件
+func OpenDataFile(dirPath string, fileId uint32, ioType fio.FileIOType) (*DataFile, error) {
+	fileName := GetDataFileName(dirPath, fileId)
+	return newDataFile(fileName, fileId, ioType)
 }
 
-func (f *LogDataFile) Sync() error {
-	return f.IOManager.Sync()
+// OpenHintFile 打开 Hint 索引文件
+func OpenHintFile(dirPath string) (*DataFile, error) {
+	fileName := filepath.Join(dirPath, HintFileName)
+	return newDataFile(fileName, 0, fio.StandardFIO)
 }
 
-// Write 写数据，更新pos数据
-func (f *LogDataFile) Write(value []byte) error {
-	offset, err := f.IOManager.Write(value)
+// OpenMergeFinishedFile 打开标识 merge 完成的文件
+func OpenMergeFinishedFile(dirPath string) (*DataFile, error) {
+	fileName := filepath.Join(dirPath, MergeFinishedFileName)
+	return newDataFile(fileName, 0, fio.StandardFIO)
+}
+
+// OpenSeqNoFile 存储事务序列号的文件
+func OpenSeqNoFile(dirPath string) (*DataFile, error) {
+	fileName := filepath.Join(dirPath, SeqNoFileName)
+	return newDataFile(fileName, 0, fio.StandardFIO)
+}
+
+func GetDataFileName(dirPath string, fileId uint32) string {
+	return filepath.Join(dirPath, fmt.Sprintf("%09d", fileId)+DataFileNameSuffix)
+}
+
+func newDataFile(fileName string, fileId uint32, ioType fio.FileIOType) (*DataFile, error) {
+	// 初始化 IOManager 管理器接口
+	ioManager, err := fio.NewIOManager(fileName, ioType)
+	if err != nil {
+		return nil, err
+	}
+	return &DataFile{
+		FileId:    fileId,
+		WriteOff:  0,
+		IoManager: ioManager,
+	}, nil
+}
+
+// ReadLogRecord 根据 offset 从数据文件中读取 LogRecord
+func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
+	fileSize, err := df.IoManager.Size()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// 如果读取的最大 header 长度已经超过了文件的长度，则只需要读取到文件的末尾即可
+	var headerBytes int64 = maxLogRecordHeaderSize
+	if offset+maxLogRecordHeaderSize > fileSize {
+		headerBytes = fileSize - offset
+	}
+
+	// 读取 Header 信息
+	headerBuf, err := df.readNBytes(headerBytes, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	header, headerSize := decodeLogRecordHeader(headerBuf)
+	// 下面的两个条件表示读取到了文件末尾，直接返回 EOF 错误
+	if header == nil {
+		return nil, 0, io.EOF
+	}
+	if header.crc == 0 && header.keySize == 0 && header.valueSize == 0 {
+		return nil, 0, io.EOF
+	}
+
+	// 取出对应的 key 和 value 的长度
+	keySize, valueSize := int64(header.keySize), int64(header.valueSize)
+	var recordSize = headerSize + keySize + valueSize
+
+	logRecord := &LogRecord{Type: header.recordType}
+	// 开始读取用户实际存储的 key/value 数据
+	if keySize > 0 || valueSize > 0 {
+		kvBuf, err := df.readNBytes(keySize+valueSize, offset+headerSize)
+		if err != nil {
+			return nil, 0, err
+		}
+		//	解出 key 和 value
+		logRecord.Key = kvBuf[:keySize]
+		logRecord.Value = kvBuf[keySize:]
+	}
+
+	// 校验数据的有效性
+	crc := getLogRecordCRC(logRecord, headerBuf[crc32.Size:headerSize])
+	if crc != header.crc {
+		return nil, 0, ErrInvalidCRC
+	}
+	return logRecord, recordSize, nil
+}
+
+func (df *DataFile) Write(buf []byte) error {
+	n, err := df.IoManager.Write(buf)
 	if err != nil {
 		return err
 	}
-	f.Pos += int64(offset)
+	df.WriteOff += int64(n)
 	return nil
 }
 
-// ReadLogRecord 读取出指定offset的数据
-func (f *LogDataFile) ReadLogRecord(offset int64) (*LogRecord, error) {
-	fileSize, err := f.IOManager.Size()
-	if err != nil {
-		return nil, err
+// WriteHintRecord 写入索引信息到 hint 文件中
+func (df *DataFile) WriteHintRecord(key []byte, pos *LogRecordPos) error {
+	record := &LogRecord{
+		Key:   key,
+		Value: EncodeLogRecordPos(pos),
 	}
-	// headerLen 防止读取超过文件大小
-	var headerLen int64 = MaxHeaderSize
-	if offset+MaxHeaderSize > fileSize {
-		headerLen = fileSize - offset
-	}
-	// 读取header信息
-	bytes, err := f.readBytes(headerLen, offset)
-	if err != nil {
-		return nil, err
-	}
-	header, headerSize := parseHeader(bytes)
-	if header == nil {
-		return nil, io.EOF
-	}
-	if header.Crc == 0 && header.KeySize == 0 && header.ValueSize == 0 {
-		return nil, io.EOF
-	}
-	keySize, valueSize := header.KeySize, header.ValueSize
-	res := &LogRecord{
-		Size: int64(keySize + valueSize),
-	}
-	readBytes, err := f.readBytes(res.Size, offset+headerSize)
-	if err != nil {
-		return nil, err
-	}
-	res.Key = readBytes[:keySize]
-	res.Value = readBytes[keySize:]
-	// CRC校验
-	crc := getLogRecordCrc(res, bytes[crc32.Size:headerSize])
-	if crc != header.Crc {
-		// TODO 解决依赖问题
-		return nil, errors.New("crc error,data is broken")
-	}
-	return res, nil
+	encRecord, _ := EncodeLogRecord(record)
+	return df.Write(encRecord)
 }
 
-func (f *LogDataFile) readBytes(len int64, offset int64) ([]byte, error) {
-	b := make([]byte, len)
-	_, err := f.IOManager.Read(b, offset)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
+func (df *DataFile) Sync() error {
+	return df.IoManager.Sync()
 }
 
-// OpenLogDataFile 打开数据文件
-func OpenLogDataFile(dirPath string, fileId uint32) (*LogDataFile, error) {
-	fileName := fmt.Sprintf("%09d", fileId) + DataFileNameSuffix
-	fileName = filepath.Join(dirPath, fileName)
-	// 初始化IOManager
-	manager, err := fio.NewIOManager(fileName)
-	if err != nil {
-		return nil, err
+func (df *DataFile) Close() error {
+	return df.IoManager.Close()
+}
+
+func (df *DataFile) SetIOManager(dirPath string, ioType fio.FileIOType) error {
+	if err := df.IoManager.Close(); err != nil {
+		return err
 	}
-	return &LogDataFile{
-		FileId:    fileId,
-		Pos:       0,
-		IOManager: manager,
-	}, nil
+	ioManager, err := fio.NewIOManager(GetDataFileName(dirPath, df.FileId), ioType)
+	if err != nil {
+		return err
+	}
+	df.IoManager = ioManager
+	return nil
+}
+
+func (df *DataFile) readNBytes(n int64, offset int64) (b []byte, err error) {
+	b = make([]byte, n)
+	_, err = df.IoManager.Read(b, offset)
+	return
 }

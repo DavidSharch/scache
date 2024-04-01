@@ -9,11 +9,11 @@ import (
 type Iterator struct {
 	indexIter index.Iterator // 索引迭代器
 	db        *DB
-	options   IterOption
+	options   IteratorOptions
 }
 
 // NewIterator 初始化迭代器
-func (db *DB) NewIterator(opts IterOption) *Iterator {
+func (db *DB) NewIterator(opts IteratorOptions) *Iterator {
 	indexIter := db.index.Iterator(opts.Reverse)
 	return &Iterator{
 		db:        db,
@@ -71,10 +71,8 @@ func (it *Iterator) skipToNext() {
 
 	for ; it.indexIter.Valid(); it.indexIter.Next() {
 		key := it.indexIter.Key()
-		if it.options.KeyPattern(key) {
-			if prefixLen <= len(key) && bytes.Compare(it.options.Prefix, key[:prefixLen]) == 0 {
-				break
-			}
+		if prefixLen <= len(key) && bytes.Compare(it.options.Prefix, key[:prefixLen]) == 0 {
+			break
 		}
 	}
 }

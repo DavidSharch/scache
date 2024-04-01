@@ -41,7 +41,7 @@ func (db *DB) Merge() error {
 	}
 
 	// 查看剩余的空间容量是否可以容纳 merge 之后的数据量
-	availableDiskSize, err := utils.AvailableDiskSize_Windows()
+	availableDiskSize, err := utils.AvailableDiskSize()
 	if err != nil {
 		db.mu.Unlock()
 		return err

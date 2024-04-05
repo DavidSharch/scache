@@ -1,8 +1,9 @@
-package sredis
+package main
 
 import (
 	"fmt"
 	"github.com/sharch/scache"
+	"github.com/sharch/scache/sredis"
 	"github.com/sharch/scache/utils"
 	"github.com/tidwall/redcon"
 	"strings"
@@ -12,7 +13,7 @@ func newWrongNumberOfArgsError(cmd string) error {
 	return fmt.Errorf("ERR wrong number of arguments for '%s' command", cmd)
 }
 
-type cmdHandler func(cli *BitcaskClient, args [][]byte) (interface{}, error)
+type cmdHandler func(cli *RedisClient, args [][]byte) (interface{}, error)
 
 var supportedCommands = map[string]cmdHandler{
 	"set":   set,
@@ -23,9 +24,9 @@ var supportedCommands = map[string]cmdHandler{
 	"zadd":  zadd,
 }
 
-type BitcaskClient struct {
-	server *BitcaskServer
-	db     *RedisDataStructure
+type RedisClient struct {
+	server *RedisServer
+	db     *sredis.RedisDataStructure
 }
 
 func execClientCommand(conn redcon.Conn, cmd redcon.Command) {
@@ -36,7 +37,7 @@ func execClientCommand(conn redcon.Conn, cmd redcon.Command) {
 		return
 	}
 
-	client, _ := conn.Context().(*BitcaskClient)
+	client, _ := conn.Context().(*RedisClient)
 	switch command {
 	case "quit":
 		_ = conn.Close()
@@ -56,7 +57,7 @@ func execClientCommand(conn redcon.Conn, cmd redcon.Command) {
 	}
 }
 
-func set(cli *BitcaskClient, args [][]byte) (interface{}, error) {
+func set(cli *RedisClient, args [][]byte) (interface{}, error) {
 	if len(args) != 2 {
 		return nil, newWrongNumberOfArgsError("set")
 	}
@@ -68,7 +69,7 @@ func set(cli *BitcaskClient, args [][]byte) (interface{}, error) {
 	return redcon.SimpleString("OK"), nil
 }
 
-func get(cli *BitcaskClient, args [][]byte) (interface{}, error) {
+func get(cli *RedisClient, args [][]byte) (interface{}, error) {
 	if len(args) != 1 {
 		return nil, newWrongNumberOfArgsError("get")
 	}
@@ -80,7 +81,7 @@ func get(cli *BitcaskClient, args [][]byte) (interface{}, error) {
 	return value, nil
 }
 
-func hset(cli *BitcaskClient, args [][]byte) (interface{}, error) {
+func hset(cli *RedisClient, args [][]byte) (interface{}, error) {
 	if len(args) != 3 {
 		return nil, newWrongNumberOfArgsError("hset")
 	}
@@ -97,7 +98,7 @@ func hset(cli *BitcaskClient, args [][]byte) (interface{}, error) {
 	return redcon.SimpleInt(ok), nil
 }
 
-func sadd(cli *BitcaskClient, args [][]byte) (interface{}, error) {
+func sadd(cli *RedisClient, args [][]byte) (interface{}, error) {
 	if len(args) != 2 {
 		return nil, newWrongNumberOfArgsError("sadd")
 	}
@@ -114,7 +115,7 @@ func sadd(cli *BitcaskClient, args [][]byte) (interface{}, error) {
 	return redcon.SimpleInt(ok), nil
 }
 
-func lpush(cli *BitcaskClient, args [][]byte) (interface{}, error) {
+func lpush(cli *RedisClient, args [][]byte) (interface{}, error) {
 	if len(args) != 2 {
 		return nil, newWrongNumberOfArgsError("lpush")
 	}
@@ -127,7 +128,7 @@ func lpush(cli *BitcaskClient, args [][]byte) (interface{}, error) {
 	return redcon.SimpleInt(res), nil
 }
 
-func zadd(cli *BitcaskClient, args [][]byte) (interface{}, error) {
+func zadd(cli *RedisClient, args [][]byte) (interface{}, error) {
 	if len(args) != 3 {
 		return nil, newWrongNumberOfArgsError("zadd")
 	}

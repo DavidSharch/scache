@@ -1,9 +1,5 @@
 package scache
 
-import (
-	"os"
-)
-
 type Options struct {
 	// 数据库数据目录
 	DirPath string
@@ -57,8 +53,10 @@ const (
 	BPlusTree
 )
 
+const DefaultDir = "D:/code/scache/temp"
+
 var DefaultOptions = Options{
-	DirPath:            os.TempDir(),
+	DirPath:            DefaultDir,
 	DataFileSize:       256 * 1024 * 1024, // 256MB
 	SyncWrites:         false,
 	BytesPerSync:       0,
